@@ -1,32 +1,71 @@
 "use client";
 
-import { motion, AnimatePresence, Reorder } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useState, useCallback } from "react";
-import {
-  db,
-  type PebbleEntry,
-  addPebble,
-  settlePebble,
-} from "@/lib/db";
+import { db, type PebbleEntry, addPebble, settlePebble } from "@/lib/db";
 import { useLiveQuery } from "dexie-react-hooks";
 
-const weightLabels: Record<string, string> = {
-  light: "light",
-  steady: "steady",
-  heavy: "heavy",
-  crushing: "crushing",
+const WEIGHT_ORDER: PebbleEntry["weight"][] = ["light", "steady", "heavy", "crushing"];
+
+const WEIGHT_STYLES: Record<string, { bg: string; accent: string; label: string }> = {
+  light: {
+    bg: "rgba(214, 229, 239, 0.15)",
+    accent: "rgba(214, 229, 239, 0.5)",
+    label: "light",
+  },
+  steady: {
+    bg: "rgba(234, 226, 214, 0.2)",
+    accent: "rgba(234, 226, 214, 0.6)",
+    label: "steady",
+  },
+  heavy: {
+    bg: "rgba(232, 213, 206, 0.25)",
+    accent: "rgba(232, 213, 206, 0.7)",
+    label: "heavy",
+  },
+  crushing: {
+    bg: "rgba(155, 148, 144, 0.15)",
+    accent: "rgba(155, 148, 144, 0.5)",
+    label: "crushing",
+  },
 };
+
+function daysSince(date: Date): number {
+  return Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function timeNudge(item: PebbleEntry): string | null {
+  const days = daysSince(item.lastTouched);
+  if (days === 0) return null;
+  if (days === 1) return "since yesterday";
+  if (days <= 3) return `sitting for ${days} days`;
+  if (days <= 7) return `waiting ${days} days — getting heavier`;
+  return `${days} days — this might need the pool`;
+}
 
 export default function PebbleView() {
   const [input, setInput] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editText, setEditText] = useState("");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const items = useLiveQuery(
     () =>
       db.pebbles
         .where("status")
         .equals("carrying")
-        .reverse()
-        .sortBy("createdAt"),
+        .toArray()
+        .then((arr) => {
+          // Sort: crushing first, then heavy, then by creation date
+          const weightPriority: Record<string, number> = {
+            crushing: 0, heavy: 1, steady: 2, light: 3,
+          };
+          return arr.sort((a, b) => {
+            const wp = (weightPriority[a.weight] ?? 2) - (weightPriority[b.weight] ?? 2);
+            if (wp !== 0) return wp;
+            return b.createdAt.getTime() - a.createdAt.getTime();
+          });
+        }),
     []
   );
 
@@ -38,73 +77,239 @@ export default function PebbleView() {
 
   const handleSettle = useCallback(async (id: number) => {
     await settlePebble(id);
+    setExpandedId(null);
   }, []);
 
-  const cycleWeight = useCallback(async (id: number, currentWeight: string) => {
-    const weights: PebbleEntry["weight"][] = ["light", "steady", "heavy", "crushing"];
-    const currentIndex = weights.indexOf(currentWeight as PebbleEntry["weight"]);
-    const nextWeight = weights[(currentIndex + 1) % weights.length];
-    await db.pebbles.update(id, { weight: nextWeight, lastTouched: new Date() });
+  const handleEdit = useCallback(
+    async (id: number) => {
+      if (!editText.trim()) return;
+      await db.pebbles.update(id, {
+        title: editText.trim(),
+        lastTouched: new Date(),
+      });
+      setEditingId(null);
+      setEditText("");
+    },
+    [editText]
+  );
+
+  const setWeight = useCallback(async (id: number, weight: PebbleEntry["weight"]) => {
+    await db.pebbles.update(id, { weight, lastTouched: new Date() });
+  }, []);
+
+  const handleDelete = useCallback(async (id: number) => {
+    await db.pebbles.update(id, { status: "released" as const });
+    setExpandedId(null);
+  }, []);
+
+  const moveToPool = useCallback(async (id: number) => {
+    const pebble = await db.pebbles.get(id);
+    if (!pebble) return;
+    await db.pool.add({
+      content: pebble.title,
+      sourceShape: "pebble",
+      sourceId: id,
+      severity: "steady",
+      createdAt: new Date(),
+      resolvedAt: null,
+    });
+    await db.pebbles.update(id, { poolMigratedAt: new Date(), status: "eroded" as const });
+    setExpandedId(null);
   }, []);
 
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex flex-col items-center pt-4 pb-6">
+      <div className="flex flex-col items-center pt-4 pb-4">
         <p className="text-[10px] text-text-secondary tracking-[-0.02em]">
           carrying {items?.length ?? 0}{" "}
           {items?.length === 1 ? "pebble" : "pebbles"}
         </p>
       </div>
 
-      {/* Items */}
-      <div className="flex-1 overflow-y-auto px-5 pb-32 space-y-2">
+      {/* Pebbles — structured, grounded, stacked */}
+      <div className="flex-1 overflow-y-auto px-5 pb-32 space-y-1.5">
         <AnimatePresence mode="popLayout">
-          {items?.map((item, index) => (
-            <motion.div
-              key={item.id}
-              layout
-              initial={{ opacity: 0, scale: 0.9, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{
-                opacity: 0,
-                scale: 0.8,
-                y: -10,
-                filter: "blur(4px)",
-                transition: { duration: 0.4 },
-              }}
-              transition={{
-                type: "spring",
-                stiffness: 350,
-                damping: 30,
-                delay: index * 0.04,
-              }}
-              className="membrane-card p-4"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1">
-                  <p className="text-[12px] leading-[1.4] tracking-[-0.02em]">
-                    {item.title}
-                  </p>
-                  <motion.button
-                    onClick={() => cycleWeight(item.id!, item.weight)}
-                    className="mt-1.5 text-[9px] text-text-secondary/60 tracking-[-0.01em]"
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    {weightLabels[item.weight]}
-                  </motion.button>
-                </div>
-                <motion.button
-                  onClick={() => handleSettle(item.id!)}
-                  className="w-5 h-5 rounded-full border border-foreground/10
-                             flex items-center justify-center flex-shrink-0 mt-0.5"
-                  whileTap={{ scale: 0.85 }}
+          {items?.map((item, index) => {
+            const style = WEIGHT_STYLES[item.weight];
+            const nudge = timeNudge(item);
+            const isExpanded = expandedId === item.id;
+            const isEditing = editingId === item.id;
+
+            return (
+              <motion.div
+                key={item.id}
+                layout
+                initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{
+                  opacity: 0,
+                  y: -8,
+                  scale: 0.95,
+                  filter: "blur(3px)",
+                  transition: { duration: 0.35 },
+                }}
+                transition={{
+                  type: "spring",
+                  stiffness: 400,
+                  damping: 30,
+                  delay: index * 0.03,
+                }}
+                onClick={() => !isEditing && setExpandedId(isExpanded ? null : item.id!)}
+                className="cursor-pointer"
+              >
+                {/* Pebble card — flat, slab-like, grounded */}
+                <div
+                  className="relative overflow-hidden"
+                  style={{
+                    background: style.bg,
+                    borderRadius: "12px",
+                    border: "1px solid rgba(255, 255, 255, 0.18)",
+                    backdropFilter: "blur(12px)",
+                    WebkitBackdropFilter: "blur(12px)",
+                  }}
                 >
-                  <motion.div className="w-1.5 h-1.5 rounded-full bg-foreground/20" />
-                </motion.button>
-              </div>
-            </motion.div>
-          ))}
+                  {/* Weight indicator — left edge bar */}
+                  <div
+                    className="absolute left-0 top-0 bottom-0 w-[3px]"
+                    style={{
+                      background: style.accent,
+                      borderRadius: "3px 0 0 3px",
+                    }}
+                  />
+
+                  <div className="pl-4 pr-4 py-3.5 ml-[3px]">
+                    {isEditing ? (
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <input
+                          value={editText}
+                          onChange={(e) => setEditText(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handleEdit(item.id!)}
+                          autoFocus
+                          className="w-full bg-transparent text-[12px] tracking-[-0.02em]
+                                     text-foreground outline-none"
+                        />
+                        <div className="flex gap-2 mt-2">
+                          <motion.button
+                            onClick={() => handleEdit(item.id!)}
+                            className="text-[9px] text-foreground/50 px-2 py-1 rounded-full bg-white/30"
+                            whileTap={{ scale: 0.9 }}
+                          >
+                            save
+                          </motion.button>
+                          <motion.button
+                            onClick={() => { setEditingId(null); setEditText(""); }}
+                            className="text-[9px] text-text-secondary/40"
+                            whileTap={{ scale: 0.9 }}
+                          >
+                            cancel
+                          </motion.button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[12px] leading-[1.3] tracking-[-0.02em] truncate">
+                            {item.title}
+                          </p>
+                          {/* Time nudge */}
+                          {nudge && (
+                            <p className="text-[9px] text-text-secondary/45 mt-1 tracking-[-0.01em]">
+                              {nudge}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Settle button */}
+                        <motion.button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSettle(item.id!);
+                          }}
+                          className="w-[18px] h-[18px] rounded-full border border-foreground/12
+                                     flex items-center justify-center flex-shrink-0"
+                          whileTap={{ scale: 0.8 }}
+                        >
+                          <div className="w-[5px] h-[5px] rounded-full bg-foreground/15" />
+                        </motion.button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Expanded actions */}
+                  <AnimatePresence>
+                    {isExpanded && !isEditing && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ type: "spring", stiffness: 350, damping: 30 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="px-4 pb-3 ml-[3px]">
+                          {/* Weight selector */}
+                          <div className="flex gap-1.5 mb-3">
+                            {WEIGHT_ORDER.map((w) => (
+                              <motion.button
+                                key={w}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setWeight(item.id!, w);
+                                }}
+                                className={`text-[9px] tracking-[-0.01em] px-2.5 py-1 rounded-full
+                                  ${item.weight === w
+                                    ? "bg-foreground/10 text-foreground/70"
+                                    : "bg-white/20 text-text-secondary/40"
+                                  }`}
+                                whileTap={{ scale: 0.9 }}
+                              >
+                                {w}
+                              </motion.button>
+                            ))}
+                          </div>
+
+                          {/* Action buttons */}
+                          <div className="flex gap-3 items-center">
+                            <motion.button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingId(item.id!);
+                                setEditText(item.title);
+                              }}
+                              className="text-[9px] text-foreground/40 tracking-[-0.01em]"
+                              whileTap={{ scale: 0.9 }}
+                            >
+                              edit
+                            </motion.button>
+                            <motion.button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                moveToPool(item.id!);
+                              }}
+                              className="text-[9px] text-foreground/40 tracking-[-0.01em]"
+                              whileTap={{ scale: 0.9 }}
+                            >
+                              → pool
+                            </motion.button>
+                            <motion.button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDelete(item.id!);
+                              }}
+                              className="text-[9px] text-red-400/40 tracking-[-0.01em] ml-auto"
+                              whileTap={{ scale: 0.9 }}
+                            >
+                              release
+                            </motion.button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
 
         {items && items.length === 0 && (

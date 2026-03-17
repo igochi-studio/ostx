@@ -309,9 +309,61 @@ export async function saveWaveSnapshot(): Promise<void> {
   });
 }
 
+// Check for ring patterns that should surface in the pool
+export async function runRingPatternCheck(): Promise<void> {
+  const rings = await getRings();
+  const now = Date.now();
+
+  for (const ring of rings) {
+    const daysSince = Math.floor(
+      (now - ring.lastInteraction.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    // If someone close (orbit 1-2) hasn't been contacted in 14+ days
+    // and they're not already in the pool, surface them
+    if (daysSince > 14 && ring.orbitDistance <= 2) {
+      const existingPoolItem = await db.pool
+        .filter(
+          (p) =>
+            p.sourceShape === "ring" &&
+            p.sourceId === ring.id &&
+            p.resolvedAt === null
+        )
+        .first();
+
+      if (!existingPoolItem) {
+        await addToPool(
+          `it's been ${daysSince} days since ${ring.personName}`,
+          { shape: "ring", id: ring.id! }
+        );
+      }
+    }
+
+    // If weather has been "stormy" — surface in pool
+    if (ring.weather === "stormy") {
+      const existingPoolItem = await db.pool
+        .filter(
+          (p) =>
+            p.sourceShape === "ring" &&
+            p.sourceId === ring.id &&
+            p.resolvedAt === null
+        )
+        .first();
+
+      if (!existingPoolItem) {
+        await addToPool(
+          `things are stormy with ${ring.personName}`,
+          { shape: "ring", id: ring.id! }
+        );
+      }
+    }
+  }
+}
+
 // Run all background processes
 export async function runQuietEngine(): Promise<void> {
   await runErosionCheck();
   await updateOrbits();
+  await runRingPatternCheck();
   await saveWaveSnapshot();
 }
