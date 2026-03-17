@@ -1,0 +1,127 @@
+@import url('https://fonts.googleapis.com/css2?family=Averia+Sans+Libre:wght@400&family=DM+Sans:wght@400;500&display=swap');
+@import "tailwindcss";
+
+:root {
+  --background: #F5F0EB;
+  --foreground: #4A4543;
+  --text-secondary: #9B9490;
+  --pearl: #F5F0EB;
+  --powder-blue: #D6E5EF;
+  --blush: #E8D5CE;
+  --caustic-gold: #F0DFC0;
+  --sand: #EAE2D6;
+  --membrane: rgba(255, 255, 255, 0.15);
+
+  /* Shape temperature tints */
+  --pool-tint: #E8D5CE;
+  --pebble-tint: #EAE2D6;
+  --droplet-tint: #D6E5EF;
+  --ring-tint: #F0DFC0;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-pearl: var(--pearl);
+  --color-powder-blue: var(--powder-blue);
+  --color-blush: var(--blush);
+  --color-caustic-gold: var(--caustic-gold);
+  --color-sand: var(--sand);
+  --color-text-secondary: var(--text-secondary);
+  --font-sans: 'DM Sans', sans-serif;
+  --font-brand: 'Averia Sans Libre', sans-serif;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+html {
+  overflow: hidden;
+  height: 100%;
+  height: 100dvh;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  overflow: hidden;
+  height: 100%;
+  height: 100dvh;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Custom scrollbar - nearly invisible */
+::-webkit-scrollbar {
+  width: 0px;
+}
+
+/* Glass membrane card */
+.membrane-card {
+  background: rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 16px;
+}
+
+/* Text glow for underwater feel */
+.text-glow {
+  text-shadow: 0 0 20px rgba(240, 223, 192, 0.15);
+}
+
+/* Caustic shimmer on interactive elements */
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.08),
+    transparent
+  );
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { left: -100%; }
+  100% { left: 200%; }
+}
+
+/* Wobble animation for bubble feel */
+@keyframes wobble {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  25% { transform: scale(1.02) rotate(0.5deg); }
+  50% { transform: scale(0.98) rotate(-0.3deg); }
+  75% { transform: scale(1.01) rotate(0.2deg); }
+}
+
+/* Gentle float for droplets */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+}
+
+/* Breathing pulse */
+@keyframes breathe {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.03); }
+}
