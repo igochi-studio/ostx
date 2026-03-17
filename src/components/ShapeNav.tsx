@@ -8,14 +8,16 @@ type ShapeType = "pool" | "pebble" | "droplet" | "ring";
 interface ShapeNavProps {
   activeShape: ShapeType | null;
   onShapeSelect: (shape: ShapeType) => void;
+  counts?: { pool: number; pebble: number; droplet: number; ring: number };
 }
 
 export default function ShapeNav({
   activeShape,
   onShapeSelect,
+  counts,
 }: ShapeNavProps) {
-  const shapes: { type: ShapeType; label: string; count?: number }[] = [
-    { type: "pool", label: "pool", count: 2 },
+  const shapes: { type: ShapeType; label: string }[] = [
+    { type: "pool", label: "pool" },
     { type: "pebble", label: "pebble" },
     { type: "droplet", label: "droplet" },
     { type: "ring", label: "ring" },
@@ -33,7 +35,6 @@ export default function ShapeNav({
         delay: 0.6,
       }}
     >
-      {/* Glass membrane background */}
       <div
         className="absolute inset-0 backdrop-blur-2xl"
         style={{
@@ -52,7 +53,7 @@ export default function ShapeNav({
             label={shape.label}
             isActive={activeShape === shape.type}
             onTap={() => onShapeSelect(shape.type)}
-            count={shape.count}
+            count={counts ? counts[shape.type] : undefined}
           />
         ))}
       </div>
